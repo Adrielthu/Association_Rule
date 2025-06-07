@@ -1,8 +1,8 @@
 library(readxl)
 library(dplyr)
 library(ggplot2)
-library(data.table)
-library(corrplot)
+library(arules)
+library(arulesSequences)
 
 #=========================================================================================
 datos <- read.csv("./e-shop clothing 2008.csv", sep = ";")
@@ -66,7 +66,6 @@ datos <- datos %>%
   )
 
 
-head(datos)
 
 #============================ Exploracion de los datos ===================================
 
@@ -84,9 +83,12 @@ names(datos)
 
 colSums(is.na(datos))
 
-#matriz de correlaciones
-matriz_cor <- cor(datos[sapply(datos, is.numeric)], use = "complete.obs")
-corrplot(matriz_cor, method = "color", type = "upper", tl.col = "black", tl.srt = 45)
+#histograma de order
+ggplot(datos, aes(x = order)) +
+  geom_histogram(binwidth = 1, fill = "steelblue", color = "black") +
+  labs(title = "Histograma de órdenes", x = "Orden", y = "Frecuencia") +
+  theme_minimal()
+
 
 #=========================================================================================
 
@@ -95,7 +97,7 @@ session_counts <- datos %>%
   group_by(session_id) %>%
   summarise(N = n()) %>%
   arrange(desc(N)) %>%
-  slice_head(n = 30)
+  slice_head(n = 300)
 
 # Gráfico
 ggplot(session_counts, aes(x = reorder(session_id, -N), y = N)) +
@@ -104,10 +106,12 @@ ggplot(session_counts, aes(x = reorder(session_id, -N), y = N)) +
   theme_minimal() +
   theme(axis.text.x = element_blank())  # Oculta los labels para no saturar
 
+
 #========= Sesiones por país =====================
 sesiones_por_pais <- datos %>%
   group_by(country) %>%
-  summarise(sesiones = n_distinct(session_id))
+  summarise(sesiones = n_distinct(session_id))%>%
+  filter(country != "Poland" & sesiones > 20)
 
 head(sesiones_por_pais)
 
@@ -119,7 +123,7 @@ ggplot(sesiones_por_pais, aes(x = as.factor(country), y = sesiones)) +
        y = "Cantidad de sesiones") +
   theme_minimal()
 
-#========= Productos por sesion =====================
+#========= Productos vistos por Sesión =====================
 productos_por_sesion <- datos %>%
   group_by(session_id, product_code)%>%
   summarise(veces_visto = n(), .groups = "drop")
@@ -137,7 +141,7 @@ ggplot(filter(productos_por_sesion, session_id == 1),
        y = "Veces visto") +
   theme_minimal()
 
-#========= categoría de producto por sesión =====================
+#========= Categoría de Producto por Sesión =====================
 top_categorias <- datos %>%
   group_by(main_category) %>%
   summarise(N = n()) %>%
@@ -145,14 +149,18 @@ top_categorias <- datos %>%
   slice_head(n = 10) %>%
   rename(categoria = main_category)
 
+# grafico de barras mostrando las categorías más clickeadas, con limite en el eje x de 30 mil clicks en adelante
+
 ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip() +
+  coord_flip(ylim = c(35000, max(top_categorias$N))) +  # Limita eje N en gráfico horizontal
   labs(title = "Top 10 categorías más clickeadas",
        x = "Categoría",
        y = "Cantidad de clics") +
   theme_minimal()
 
+
+#=========================================================================================
 #========= clicks de navegación a lo largo de los meses =====================
 clics_por_mes <- datos %>%
   group_by(month) %>%
@@ -165,7 +173,172 @@ ggplot(clics_por_mes, aes(x = factor(month), y = cantidad_clics)) +
        y = "Cantidad de clics") +
   theme_minimal()
 
-#=========   =====================
+#=========================================================================================
+#========= Convertir los productos por sesión a transacciones =====================
+
+transacciones <- as(split(datos$product_code, datos$session_id), "transactions")
+
+# Numero de transacciones
+transacciones
+
+# Resumen de las transacciones
+summary(transacciones)
+
+# Vemos las transacciones
+inspect(transacciones[1:10])
+
+# Vemos como se distribuyen las cantidades de items por transacción
+frecuentes <- itemFrequency(transacciones)
+frecuentes <- sort(frecuentes, decreasing = TRUE)
+top10 <- frecuentes[1:10]
+
+grises <- gray.colors(10, start = 0.3, end = 0.9)
+barplot(top10, 
+        col = grises,
+        main = "Top 10 productos más frecuentes",
+        ylab = "Frecuencia relativa",
+        las = 2,
+        cex.names = 0.7)
+
+# Vemos la cantidad de transacciones por producto
+boxplot(frecuentes, 
+        main = "Distribución de frecuencias de ítems",
+        ylab = "Frecuencia relativa",
+        col = "lightblue")
+#=========================================================================================
+#========= Conjunto de itemsets frecuentes: soporte = mediana, minlen = 2 =====================
+soporte <- median(frecuentes)
+
+itemsets_frecuentes <- eclat(transacciones,
+                             parameter = list(support = soporte, minlen = 2), 
+                             control = list(verbose=F))
+
+itemsets <- sort(itemsets_frecuentes, by= "support", decreasing = TRUE)
+
+inspect(head(itemsets, 5))
+
+#========= itemsets frecuentes: soporte = 2%, minlen = 2 =====================
+itemsets_frecuentes <- eclat(transacciones,
+                             parameter = list(support = 0.02, minlen = 2), 
+                             control = list(verbose=F))
+
+itemsets <- sort(itemsets_frecuentes, by= "support", decreasing = TRUE)
+
+inspect(head(itemsets, 5))
+
+#=========================================================================================
+#========= reglas de asociación: Polonia, en la categoría “blusas” =====================
+
+polonia <- datos %>%
+  filter(country == "Poland", main_category == "blouses")
+
+trans_polonia <- as(split(polonia$product_code, polonia$session_id), "transactions")
+
+
+# reglas con soporte mínimo de 2% y una confianza de 20%
+
+itemsets_frec <- eclat(trans_polonia,
+                             parameter = list(support = 0.02, minlen = 2), 
+                             control = list(verbose=F))
+
+itemsets_frec
+itemsets <- sort(itemsets_frec[1:5], by = "support", decreasing = TRUE)
+inspect(itemsets)
+
+reglas <- ruleInduction(itemsets_frec, 
+                        transactions = trans_polonia,
+                        confidence = 0.2)
+reglas
+
+itemsets <- sort(reglas, by = "support", decreasing = TRUE)
+inspect(itemsets[1:10])
+
+metricas <- interestMeasure(reglas, measure = c("coverage", "fishersExactTest", "lift"))
+
+metricas
+
+#=========================================================================================
+#========= reglas de asociación: República Checa, en la categoría “blusas” =====================
+czech_republic <- datos %>%
+  filter(country == "Czech Republic", main_category == "blouses")
+
+trans_czech_republic <- as(split(czech_republic$product_code, czech_republic$session_id), "transactions")
+
+
+# reglas con soporte mínimo de 4% y una confianza de 20%
+
+itemsets_frec <- eclat(trans_czech_republic,
+                       parameter = list(support = 0.04, minlen = 2), 
+                       control = list(verbose=F))
+
+itemsets_frec
+itemsets <- sort(itemsets_frec, by = "support", decreasing = TRUE)
+inspect(itemsets)
+
+reglas <- ruleInduction(itemsets_frec, 
+                        transactions = trans_czech_republic,
+                        confidence = 0.25)
+reglas
+
+itemsets <- sort(reglas, by = "support", decreasing = TRUE)
+inspect(itemsets)
+
+metricas <- interestMeasure(reglas, measure = c("coverage", "fishersExactTest", "lift"))
+
+metricas
+
+#=========================================================================================
+#========= secuencias más frecuentes  =====================
+
+seq1 <- cspade(zaki,
+               # support = 0.1 -> set of 3917 sequences
+               # support = 0.25 -> set of 3917 sequences
+               # support = 0.4 -> set of 18 sequences
+               # support = 0.7 -> set of 7 sequences
+               parameter = list(support = 0.7),
+               control = list(verbose=F))
+seq1
+summary(seq1)
+inspect(seq1)
+
+reglas1 <- ruleInduction(seq1,
+                         confidence = 0.8)
+reglas1
+inspect(reglas1[1:10])
+
+# Ejemplo 2
+library(data.table)
+transacciones <- read_baskets(con = "sequences.txt",
+                              info = c("sequenceID","eventID","SIZE"))
+transacciones
+summary(transacciones)
+
+inspect(transacciones[1:10])
+
+aux0 <- as(transacciones, "data.frame")
+
+seq1 <- cspade(transacciones,
+               parameter = list(support = 0.002),
+               control = list(verbose=F))
+
+seq1
+summary(seq1)
+inspect(seq1[1:20])
+
+reglas1 <- ruleInduction(seq1,
+                         confidence = 0.26)
+reglas1
+inspect(reglas1[1:10])
+
+as(sort(reglas1, decreasing = TRUE, by = "lift"),
+   "data.frame")
+
+arulesVIZ
+
+
+
+
+
 
 
 
