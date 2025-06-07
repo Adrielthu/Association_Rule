@@ -57,15 +57,13 @@ datos$model_photography <- recode(as.character(datos$model_photography),
 datos$price_above_avg <- recode(as.character(datos$price_above_avg),
                                  "1" = "yes", "2" = "no")
 
-# Reordenar columnas si querés una estructura lógica
+# Reordeno las columnas
 datos <- datos %>%
   select(
     year, month, day, session_id, order, page,
     main_category, product_code, colour, price, price_above_avg,
     model_photography, location, country
   )
-
-
 
 #============================ Exploracion de los datos ===================================
 
