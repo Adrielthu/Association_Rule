@@ -1,3 +1,7 @@
+#=========================================================================================
+#                               TP-MINERÍA: Asociaciones y Secuencias
+#                               Autores: Adriel Starchevich y Elias Coradini
+#=========================================================================================
 library(readxl)
 library(dplyr)
 library(ggplot2)
@@ -5,9 +9,9 @@ library(arules)
 library(arulesSequences)
 library(tidyr)
 
-#=========================================================================================
+#========= Cargar los datos ===================================
 datos <- read.csv("./e-shop clothing 2008.csv", sep = ";")
-#=========================================================================================
+#========= Limpieza de los datos ===================================
 #Renombramos columnas
 colnames(datos) <- c(
   "year", "month", "day", "order", "country", "session_id",
@@ -66,8 +70,9 @@ datos <- datos %>%
     model_photography, location, country
   )
 
-#============================ Exploracion de los datos ===================================
+#========= Exploracion de los datos ===================================
 
+#--------- Exploración inicial de los datos
 View(datos)
 
 summary(datos)
@@ -84,12 +89,7 @@ colSums(is.na(datos))
 
 sapply(datos, function(x) length(unique(x)))  # cantidad de valores únicos por columna
 
-# Grafico de barras de categorías principales
-ggplot(datos, aes(x = main_category)) +
-  geom_bar(fill = "steelblue") +
-  labs(title = "Distribución de categorías principales")
-
-# Calcular sesiones únicas por país
+#--------- Sesiones únicas por país
 sesiones_por_pais <- datos %>%
   group_by(country) %>%
   summarise(sesiones = n_distinct(session_id)) %>%
@@ -104,53 +104,39 @@ ggplot(sesiones_por_pais, aes(x = reorder(country, sesiones), y = sesiones)) +
        y = "Cantidad de sesiones") +
   theme_minimal()
 
-# Grafico de distribución de precios
-ggplot(datos, aes(x = price)) +
-  geom_bar(bins = 50, fill = "darkgreen") +
-  labs(title = "Distribución de precios")
+#--------- Porcentaje de sesiones únicas por país
+sesiones_por_pais <- datos %>%
+  group_by(country) %>%
+  summarise(sesiones = n_distinct(session_id)) %>%
+  mutate(porcentaje = sesiones / sum(sesiones) * 100)
 
+sesiones_agrupadas <- sesiones_por_pais %>%
+  mutate(country = ifelse(porcentaje < 3, "Otros", country)) %>%
+  group_by(country) %>%
+  summarise(sesiones = sum(sesiones)) %>%
+  mutate(porcentaje = sesiones / sum(sesiones) * 100) %>%
+  arrange(desc(porcentaje))
+# Gráfico
 
-# Agrupar los clics por posición de imagen
-clics_por_posicion <- datos %>%
-  group_by(location) %>%
-  summarise(cantidad_clics = n()) %>%
-  arrange(desc(cantidad_clics))
-
-#top_categorias
-top_categorias <- datos %>%
-  group_by(main_category) %>%
-  summarise(N = n()) %>%
-  arrange(desc(N)) %>%
-  slice_head(n = 10) %>%
-  rename(categoria = main_category)
-
-# Gráfico de barras horizontales ordenado por cantidad
-ggplot(clics_por_posicion, aes(x = reorder(location, cantidad_clics), y = cantidad_clics)) +
+ggplot(sesiones_agrupadas, aes(x = reorder(country, porcentaje), y = porcentaje)) +
   geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = paste0(round(porcentaje, 1), "%")), hjust = -0.1, size = 3) +
   coord_flip() +
-  coord_flip(ylim = c(20000, max(top_categorias$N))) +
-  labs(title = "Cantidad de clics por posición de imagen",
-       x = "Posición de la imagen",
-       y = "Cantidad de clics") +
+  labs(title = "Porcentaje de sesiones únicas por país",
+       x = "País",
+       y = "Porcentaje de sesiones (%)") +
   theme_minimal()
 
-
-# Promedio de precios por posición de imagen
-precio_promedio_por_posicion <- datos %>%
-  group_by(location) %>%
-  summarise(precio_promedio = mean(price, na.rm = TRUE)) %>%
-  arrange(desc(precio_promedio))
-
-# Visualización: gráfico de barras horizontales
-ggplot(precio_promedio_por_posicion, aes(x = reorder(location, precio_promedio), y = precio_promedio)) +
-  geom_bar(stat = "identity", fill = "darkgray") +
-  coord_flip() +
-  labs(title = "Precio promedio por posición de imagen",
-       x = "Posición de imagen",
-       y = "Precio promedio (USD)") +
+#--------- Clicks por página
+datos %>%
+  group_by(page) %>%
+  summarise(clicks = n()) %>%
+  ggplot(aes(x = factor(page), y = clicks)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(title = "Cantidad de clicks por página", x = "Página", y = "Clicks") +
   theme_minimal()
 
-# grafico boxplot del precio
+#--------- Boxplot del precio por categoría principal
 ggplot(datos, aes(x = main_category, y = price)) +
   geom_boxplot(fill = "lightblue") +
   labs(title = "Boxplot del precio por categoría principal",
@@ -159,80 +145,107 @@ ggplot(datos, aes(x = main_category, y = price)) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+#--------- Distribución de precios
+ggplot(datos, aes(x = price)) +
+  geom_histogram(binwidth = 5, fill = "darkgreen", color = "white") +
+  labs(
+    title = "Distribución de precios",
+    x = "Precio",
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
 
-# Calcular clics y precio promedio por posición
-resumen_posicion <- datos %>%
-  group_by(location) %>%
-  summarise(
-    cantidad_clics = n(),
-    precio_promedio = mean(price, na.rm = TRUE)
-  ) %>%
-  arrange(desc(cantidad_clics))
+#--------- Distribución de clicks según la posición de la imagen en las diferentes páginas: por país
 
-# Gráfico
-ggplot(resumen_posicion, aes(x = reorder(as.factor(location), cantidad_clics),
-                             y = cantidad_clics,
-                             fill = precio_promedio)) +
+# Para Polonia
+resumen_pagina_polonia <- datos %>%
+  filter(country == "Poland") %>%
+  group_by(page, location) %>% 
+  summarise(cantidad_clics = n(), precio_promedio = mean(price, na.rm = TRUE), .groups = "drop")
+
+ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
+                                   y = cantidad_clics,
+                                   fill = precio_promedio)) +
   geom_bar(stat = "identity") +
   coord_flip() +
   scale_fill_gradient(low = "#c7f0c1", high = "#006400", name = "Precio promedio") +
-  labs(title = "Clics por posición de imagen",
+  labs(title = "Clicks por posición de imagen y página en Polonia",
        x = "Posición de imagen",
-       y = "Cantidad de clics") +
+       y = "Cantidad de clicks") +
+  facet_wrap(~ page, ncol = 1) +
   theme_minimal()
 
+# Para Czech Republic
+resumen_pagina_polonia <- datos %>%
+  filter(country == "Czech Republic") %>%
+  group_by(page, location) %>%
+  summarise(
+    cantidad_clics = n(),
+    precio_promedio = mean(price, na.rm = TRUE),
+    .groups = "drop")
 
+ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
+                                   y = cantidad_clics,
+                                   fill = precio_promedio)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  scale_fill_gradient(low = "#c7f0c1", high = "#006400", name = "Precio promedio") +
+  labs(title = "Clicks por posición de imagen y página en República Checa",
+       x = "Posición de imagen",
+       y = "Cantidad de clicks") +
+  facet_wrap(~ page, ncol = 1) +
+  theme_minimal()
+
+#--------- Distribución de sesiones
 #Clics por sesión
 sesiones <- datos %>%
-  group_by(session_id) %>%
-  summarise(total_clicks = n()) %>%
-  ungroup()
+   group_by(session_id) %>%
+   summarise(total_clicks = n()) %>%
+   ungroup()
 
 #Agrupar en rangos de clics
 sesiones <- sesiones %>%
-  mutate(clicks_grupo = cut(
-    total_clicks,
-    breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
-    labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
-    right = FALSE
-  ))
-
-head(sesiones)
+   mutate(clicks_grupo = cut(
+     total_clicks,
+     breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
+     labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
+     right = FALSE))
 
 #Grafico
 ggplot(sesiones, aes(x = clicks_grupo)) +
-  geom_bar(fill = "steelblue", color = "black") +
-  labs(title = "Distribución de sesiones por número de clics",
-       x = "Rango de clics por sesión",
-       y = "Cantidad de sesiones") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+   geom_bar(fill = "steelblue", color = "black") +
+   labs(title = "Distribución de sesiones por número de clicks",
+          x = "Rango de clicks por sesión",
+          y = "Cantidad de sesiones") +
+   theme_minimal() +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
+#--------- Distribución de sesiones por numero de clicks
 
 #Categoria principal por sesion
 cat_sesion <- datos %>%
-  group_by(session_id, main_category) %>%
-  summarise(n = n(), .groups = "drop") %>%
-  group_by(session_id) %>%
-  top_n(1, wt = n) %>%
-  ungroup() %>%
-  select(session_id, main_category)
+   group_by(session_id, main_category) %>%
+   summarise(n = n(), .groups = "drop") %>%
+   group_by(session_id) %>%
+   top_n(1, wt = n) %>%
+   ungroup() %>%
+   select(session_id, main_category)
 
 #Unimos con los totales de clicks
 sesiones_cat <- sesiones %>%
-  left_join(cat_sesion, by = "session_id")
+   left_join(cat_sesion, by = "session_id")
 
 # Graficar
 ggplot(sesiones_cat, aes(x = clicks_grupo, fill = main_category)) +
-  geom_bar(position = "fill") +
-  labs(title = "Clics por sesión según categoría principal",
-       x = "Rango de clics por sesión",
-       y = "Proporción de sesiones",
-       fill = "Categoría") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+   geom_bar(position = "fill") +
+   labs(title = "Clics por sesión según categoría principal",
+        x = "Rango de clics por sesión",
+        y = "Proporción de sesiones",
+        fill = "Categoría") +
+   theme_minimal() +
+   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-#=========================================================================================
+#=====================================
 
 #========= Clicks por sesión =====================
 session_counts <- datos %>%
@@ -244,7 +257,7 @@ session_counts <- datos %>%
 # Gráfico
 ggplot(session_counts, aes(x = reorder(session_id, -N), y = N)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Cantidad de clics por sesión", x = "ID de Sesión", y = "Cantidad de clics") +
+  labs(title = "Cantidad de clicks por sesión", x = "ID de Sesión", y = "Cantidad de clicks") +
   theme_minimal() +
   theme(axis.text.x = element_blank())  # Oculta los labels
 
@@ -298,7 +311,7 @@ ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
   coord_flip(ylim = c(35000, max(top_categorias$N))) +  # Limita eje N en gráfico horizontal
   labs(title = "Top 10 categorías más clickeadas",
        x = "Categoría",
-       y = "Cantidad de clics") +
+       y = "Cantidad de clicks") +
   theme_minimal()
 
 #=========================================================================================
@@ -310,34 +323,10 @@ clics_por_mes <- datos %>%
 
 ggplot(clics_por_mes, aes(x = factor(month), y = cantidad_clics)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Evolución de los clics de navegación por mes",
+  labs(title = "Evolución de los clicks de navegación por mes",
        x = "Mes",
-       y = "Cantidad de clics") +
+       y = "Cantidad de clicks") +
   theme_minimal()
-
-#=========================================================================================
-
-#========= PRUEBAS =====================
-trans_location <- as(split(datos$location, datos$session_id), "transactions")
-
-# Reglas de asociación
-rules_location <- apriori(trans_location,
-                          parameter = list(supp = 0.05, conf = 0.80, minlen = 2))
-rules_location
-
-inspect(rules_location[1:10])
-inspect(sort(rules_location, by = "support", decreasing = TRUE))
-
-
-# Combinar productos y ubicaciones
-datos$product_location <- paste(datos$product_code, datos$location, sep = "_")
-
-transacciones <- as(split(datos$product_location, datos$session_id), "transactions")
-
-# Reglas: encontrar asociaciones entre productos y posiciones
-reglas <- apriori(transacciones, parameter = list(supp = 0.01, conf = 0.5, minlen = 2))
-reglas
-inspect(sort(reglas, by = "confidence", decreasing = TRUE))
 
 #=========================================================================================
 
@@ -483,20 +472,51 @@ summary(seq1)
 inspect(seq1[1:10])
 
 
+#=========================================================================================
+
+#========= PRUEBAS =====================
+trans_location <- as(split(datos$location, datos$session_id), "transactions")
+
+# Reglas de asociación
+rules_location <- apriori(trans_location,
+                          parameter = list(supp = 0.05, conf = 0.80, minlen = 2))
+rules_location
+
+inspect(rules_location[1:10])
+inspect(sort(rules_location, by = "support", decreasing = TRUE))
 
 
+# Combinar productos y ubicaciones
+datos$product_location <- paste(datos$product_code, datos$location, sep = "_")
 
+transacciones <- as(split(datos$product_location, datos$session_id), "transactions")
 
-
-
-
-
-
-
-
-
-
-
-
+# Reglas: encontrar asociaciones entre productos y posiciones
+reglas <- apriori(transacciones, parameter = list(supp = 0.01, conf = 0.5, minlen = 2))
+reglas
+inspect(sort(reglas, by = "confidence", decreasing = TRUE))
 
 #=========================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
