@@ -303,7 +303,7 @@ top_categorias <- datos %>%
   group_by(main_category) %>%
   summarise(N = n()) %>%
   arrange(desc(N)) %>%
-  slice_head(n = 10) %>%
+  slice_head(n = 4) %>%
   rename(categoria = main_category)
 
 # grafico de barras mostrando las categorías más clickeadas, con limite en el eje x de 30 mil clicks en adelante
@@ -311,7 +311,7 @@ top_categorias <- datos %>%
 ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip(ylim = c(35000, max(top_categorias$N))) +  # Limita eje N en gráfico horizontal
-  labs(title = "Top 10 categorías más clickeadas",
+  labs(title = "Categorías más clickeadas",
        x = "Categoría",
        y = "Cantidad de clicks") +
   theme_minimal()
@@ -321,14 +321,20 @@ ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
 #========= C) clicks de navegación a lo largo de los meses =====================
 clics_por_mes <- datos %>%
   group_by(month) %>%
-  summarise(cantidad_clics = n(), .groups = "drop")
+  summarise(cantidad_clics = n(), .groups = "drop") %>%
+  mutate(nombre_mes = factor(month, 
+                             levels = 4:8, 
+                             labels = c("Abril", "Mayo", "Junio", "Julio", "Agosto")))
 
-ggplot(clics_por_mes, aes(x = factor(month), y = cantidad_clics)) +
+ggplot(clics_por_mes, aes(x = nombre_mes, y = cantidad_clics)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Evolución de los clicks de navegación por mes",
-       x = "Mes",
-       y = "Cantidad de clicks") +
+  labs(
+    title = "Evolución de los clicks de navegación por mes",
+    x = "Mes",
+    y = "Cantidad de clicks"
+  ) +
   theme_minimal()
+
 
 #=========================================================================================
 
