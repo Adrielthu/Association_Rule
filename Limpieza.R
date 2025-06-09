@@ -116,8 +116,8 @@ sesiones_agrupadas <- sesiones_por_pais %>%
   summarise(sesiones = sum(sesiones)) %>%
   mutate(porcentaje = sesiones / sum(sesiones) * 100) %>%
   arrange(desc(porcentaje))
-# Gráfico
 
+# Gráfico
 ggplot(sesiones_agrupadas, aes(x = reorder(country, porcentaje), y = porcentaje)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   geom_text(aes(label = paste0(round(porcentaje, 1), "%")), hjust = -0.1, size = 3) +
@@ -148,12 +148,14 @@ ggplot(datos, aes(x = main_category, y = price)) +
 #--------- Distribución de precios
 ggplot(datos, aes(x = price)) +
   geom_histogram(binwidth = 5, fill = "darkgreen", color = "white") +
+  scale_x_continuous(breaks = seq(20, 80, by = 5)) +
   labs(
     title = "Distribución de precios",
     x = "Precio",
     y = "Frecuencia"
   ) +
   theme_minimal()
+
 
 #--------- Distribución de clicks según la posición de la imagen en las diferentes páginas: por país
 
