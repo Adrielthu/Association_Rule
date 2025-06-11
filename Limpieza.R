@@ -206,10 +206,6 @@ sesiones <- datos %>%
   summarise(total_clicks = n()) %>%
   ungroup()
 
-# Calcular los conteos por grupo para agregar etiquetas
-conteo <- sesiones %>%
-  count(clicks_grupo)
-
 # Agrupar en rangos de clics
 sesiones <- sesiones %>%
   mutate(clicks_grupo = cut(
@@ -219,6 +215,9 @@ sesiones <- sesiones %>%
     right = FALSE
   ))
 
+# Calcular los conteos por grupo para agregar etiquetas
+conteo <- sesiones %>%
+  count(clicks_grupo)
 
 # Gráfico con etiquetas
 ggplot(conteo, aes(x = clicks_grupo, y = n)) +
