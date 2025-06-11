@@ -8,6 +8,7 @@ library(ggplot2)
 library(arules)
 library(arulesSequences)
 library(tidyr)
+library(scales)# para etiquetas de porcentaje
 
 #========= Cargar los datos ===================================
 datos <- read.csv("./e-shop clothing 2008.csv", sep = ";")
@@ -57,10 +58,10 @@ datos$location <- dplyr::recode(as.character(datos$location), !!!ubicacion)
 
 # MODEL PHOTOGRAPHY
 datos$model_photography <- dplyr::recode(as.character(datos$model_photography),
-                                   "1" = "en face", "2" = "profile")
+                                         "1" = "en face", "2" = "profile")
 # PRICE 2
 datos$price_above_avg <- dplyr::recode(as.character(datos$price_above_avg),
-                                 "1" = "yes", "2" = "no")
+                                       "1" = "yes", "2" = "no")
 
 # Reordeno las columnas
 datos <- datos %>%
@@ -199,53 +200,83 @@ ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
   theme_minimal()
 
 #--------- Distribución de sesiones
-#Clics por sesión
+# Clics por sesión
 sesiones <- datos %>%
-   group_by(session_id) %>%
-   summarise(total_clicks = n()) %>%
-   ungroup()
+  group_by(session_id) %>%
+  summarise(total_clicks = n()) %>%
+  ungroup()
 
-#Agrupar en rangos de clics
+# Calcular los conteos por grupo para agregar etiquetas
+conteo <- sesiones %>%
+  count(clicks_grupo)
+
+# Agrupar en rangos de clics
 sesiones <- sesiones %>%
-   mutate(clicks_grupo = cut(
-     total_clicks,
-     breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
-     labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
-     right = FALSE))
+  mutate(clicks_grupo = cut(
+    total_clicks,
+    breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
+    labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
+    right = FALSE
+  ))
 
-#Grafico
-ggplot(sesiones, aes(x = clicks_grupo)) +
-   geom_bar(fill = "steelblue", color = "black") +
-   labs(title = "Distribución de sesiones por número de clicks",
-          x = "Rango de clicks por sesión",
-          y = "Cantidad de sesiones") +
-   theme_minimal() +
-   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Gráfico con etiquetas
+ggplot(conteo, aes(x = clicks_grupo, y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
+  geom_text(aes(label = n), vjust = -0.5) +  # Agrega etiquetas arriba de las barras
+  labs(title = "Distribución de sesiones por número de clicks",
+       x = "Rango de clicks por sesión",
+       y = "Cantidad de sesiones") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #--------- Distribución de sesiones por numero de clicks
 
 #Categoria principal por sesion
 cat_sesion <- datos %>%
-   group_by(session_id, main_category) %>%
-   summarise(n = n(), .groups = "drop") %>%
-   group_by(session_id) %>%
-   top_n(1, wt = n) %>%
-   ungroup() %>%
-   select(session_id, main_category)
+  group_by(session_id, main_category) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(session_id) %>%
+  top_n(1, wt = n) %>%
+  ungroup() %>%
+  select(session_id, main_category)
 
 #Unimos con los totales de clicks
 sesiones_cat <- sesiones %>%
-   left_join(cat_sesion, by = "session_id")
+  left_join(cat_sesion, by = "session_id")
 
 # Graficar
 ggplot(sesiones_cat, aes(x = clicks_grupo, fill = main_category)) +
-   geom_bar(position = "fill") +
-   labs(title = "Clics por sesión según categoría principal",
-        x = "Rango de clics por sesión",
-        y = "Proporción de sesiones",
-        fill = "Categoría") +
-   theme_minimal() +
-   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  geom_bar(position = "fill") +
+  labs(title = "Clics por sesión según categoría principal",
+       x = "Rango de clics por sesión",
+       y = "Proporción de sesiones",
+       fill = "Categoría") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#--
+
+# Calcular proporciones por grupo
+proporciones <- sesiones_cat %>%
+  group_by(clicks_grupo, main_category) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  group_by(clicks_grupo) %>%
+  mutate(proporcion = n / sum(n))#calculamos las proporciones
+
+# Gráfico con proporciones y etiquetas
+ggplot(proporciones, aes(x = clicks_grupo, y = proporcion, fill = main_category)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_text(aes(label = percent(proporcion, accuracy = 0.1)),
+            position = position_stack(vjust = 0.5),
+            size = 3.05, color = "black") +
+  labs(title = "Clics por sesión según categoría principal",
+       x = "Rango de clics por sesión",
+       y = "Proporción de sesiones",
+       fill = "Categoría") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 #=====================================
 
@@ -371,25 +402,14 @@ boxplot(frecuentes,
         col = "lightblue")
 #=========================================================================================
 
-#========= E) Conjunto de itemsets frecuentes: soporte = mediana, minlen = 2 =====================
-soporte <- median(frecuentes)
-
-itemsets_frecuentes <- eclat(transacciones,
-                             parameter = list(support = soporte, minlen = 2), 
-                             control = list(verbose=F))
-
-itemsets <- sort(itemsets_frecuentes, by= "support", decreasing = TRUE)
-
-inspect(head(itemsets, 5))
-
-#itemsets frecuentes: soporte = 2%, minlen = 2
+#========= E) Conjunto de itemsets frecuentes: soporte = 2%, minlen = 2 =====================
 itemsets_frecuentes <- eclat(transacciones,
                              parameter = list(support = 0.02, minlen = 2), 
                              control = list(verbose=F))
 
 itemsets <- sort(itemsets_frecuentes, by= "support", decreasing = TRUE)
 
-inspect(head(itemsets, 5))
+inspect(head(itemsets, 6))
 
 #=========================================================================================
 
