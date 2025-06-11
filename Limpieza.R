@@ -459,11 +459,12 @@ metricas
 #========= I) secuencias más frecuentes  =====================
 
 # Filtrar y seleccionar solo las columnas necesarias
+# Preparar datos para análisis secuencial
 secuencias <- datos %>%
   select(session_id, order, product_code) %>%
   rename(sequenceID = session_id, eventID = order, item = product_code) %>%
-  group_by(sequenceID, eventID) %>%
-  summarise(items = paste(item, collapse = ","), .groups = "drop")
+  # Asegurar que cada fila representa un item en un evento específico
+  arrange(sequenceID, eventID)
 
 # Guardar en CSV temporal para cargarlo como transacciones secuenciales
 write.table(secuencias, "secuencias_tmp.csv", sep = ",", row.names = FALSE, col.names = FALSE, quote = FALSE)
@@ -475,9 +476,14 @@ inspect(trans_seq[1:5])
 seq1 <- cspade(trans_seq,
                parameter = list(support = 0.02),
                control = list(verbose=F))
+
+seq1 <- subset(seq1, size(seq1) > 1)
+
+seq1 <- sort(seq1, by = "support", decreasing = TRUE)
+
 seq1
 summary(seq1)
-inspect(seq1[1:10])
+inspect(seq1)
 
 
 #=========================================================================================
