@@ -1,20 +1,29 @@
 #=========================================================================================
-#                         TP-MINERÍA: Asociaciones y Secuencias
+#                                   MINERÍA DE DATOS
+#                           Reglas de Asociacion y Secuencias
+#
 #                         Autores: Adriel Starchevich y Elias Coradini
+#                                       12/06/2025
 #=========================================================================================
 
 #========= Librerías necesarias ==================================
-library(readxl)
-library(dplyr)
-library(ggplot2)
-library(arules)
-library(arulesSequences)
-library(tidyr)
-library(scales) # para etiquetas de porcentaje
-library(waffle)
-library(tibble)
-library(RColorBrewer)
-library(stringr)
+# Manipulación y transformación de datos
+library(dplyr)           # Verbos como filter(), group_by(), summarise(), mutate()
+library(tidyr)           # Para pivotear, separar o unir columnas (reshape de datos)
+library(tibble)          # Alternativa moderna a data.frame, más limpia y legible
+
+# Visualización de datos
+library(ggplot2)         # Para crear gráficos personalizados
+library(scales)          # Para formatear ejes (porcentajes, escalas logarítmicas, etc.)
+library(waffle)          # Para crear gráficos tipo waffle (proporciones en cuadrícula)
+library(RColorBrewer)    # Paletas de colores predefinidas para visualizaciones
+
+# Minería de reglas de asociación y patrones secuenciales
+library(arules)          # Para aplicar el algoritmo Apriori y generar reglas de asociación
+library(arulesSequences) # Para análisis de secuencias ordenadas con el algoritmo cSPADE
+
+# Manejo de texto
+library(stringr)         # Funciones útiles para procesar strings: detectar, reemplazar, extraer
 
 #=========================================================================================
 
@@ -164,7 +173,7 @@ ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
   facet_wrap(~ page, ncol = 1) +
   theme_minimal()
 
-#----------
+#---------- Mapa de calor de clicks por posición de imagen y página
 
 posiciones_coord <- data.frame(
   location = 1:6,
@@ -368,23 +377,23 @@ waffle(waffle_vector,
        colors = brewer.pal(n = length(waffle_vector), name = "Set2"))
 
 
-#========= Productos vistos por Sesión (VER) =====================
-productos_por_sesion <- datos %>%
-  group_by(session_id, product_code)%>%
-  summarise(veces_visto = n(), .groups = "drop")
-
-productos_por_sesion %>%
+#========= Productos vistos por Sesión =====================
+# Agrupa por producto y cuenta cuántas veces fue visto
+productos_mas_vistos <- datos %>%
+  group_by(product_code) %>%
+  summarise(veces_visto = n(), .groups = "drop") %>%
   arrange(desc(veces_visto)) %>%
-  head(10)
+  slice_head(n = 20)
 
-
-ggplot(filter(productos_por_sesion, session_id == 1), 
-       aes(x = product_code, y = veces_visto)) +
+# Gráfico
+ggplot(productos_mas_vistos, aes(x = reorder(product_code, veces_visto), y = veces_visto)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  labs(title = "Productos vistos en la sesión 1",
+  coord_flip() +
+  labs(title = "Top 20 productos más clickeados",
        x = "Código del producto",
-       y = "Veces visto") +
+       y = "Cantidad de clicks") +
   theme_minimal()
+
 
 #========= Categoría de Producto por Sesión =====================
 top_categorias <- datos %>%
@@ -563,46 +572,5 @@ seq_tabla <- data.frame(
 seq_tabla
 
 #=========================================================================================
-
-
-
-
-#========= Productos vistos por Sesión =====================
-
-library(dplyr)
-library(ggplot2)
-library(treemapify)
-
-# 1. Las 5 sesiones más activas
-top_sesiones <- datos %>%
-  group_by(session_id) %>%
-  summarise(total = n(), .groups = "drop") %>%
-  arrange(desc(total)) %>%
-  slice_head(n = 3) %>%
-  pull(session_id)
-
-# 2. Crear dataframe para el treemap
-df <- datos %>%
-  filter(session_id %in% top_sesiones) %>%
-  group_by(session_id, product_code) %>%
-  summarise(valor = n(), .groups = "drop") %>%
-  rename(subgrupo = session_id, grupo = product_code)
-
-# 3. Treemap sin leyend
-ggplot(df, aes(area = valor, fill = grupo, label = grupo, subgroup = subgrupo)) +
-  geom_treemap() +
-  geom_treemap_subgroup_border(colour = "white", size = 2) +
-  geom_treemap_subgroup_text(place = "centre", grow = TRUE,
-                             alpha = 0.3, colour = "black", fontface = "italic") +
-  geom_treemap_text(colour = "white", place = "centre",
-                    size = 12, grow = TRUE) +
-  theme(legend.position = "none") +
-  labs(title = "Productos comprados por las 5 sesiones más activas")
-
-
-
-
-
-
 
 
