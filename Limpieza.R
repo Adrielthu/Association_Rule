@@ -1,7 +1,9 @@
 #=========================================================================================
-#                               TP-MINERÍA: Asociaciones y Secuencias
-#                               Autores: Adriel Starchevich y Elias Coradini
+#                         TP-MINERÍA: Asociaciones y Secuencias
+#                         Autores: Adriel Starchevich y Elias Coradini
 #=========================================================================================
+
+#========= Librerías necesarias ==================================
 library(readxl)
 library(dplyr)
 library(ggplot2)
@@ -9,9 +11,17 @@ library(arules)
 library(arulesSequences)
 library(tidyr)
 library(scales)# para etiquetas de porcentaje
+library(waffle)
+library(tibble)
+library(RColorBrewer)
+library(stringr)
+
+#=========================================================================================
 
 #========= Cargar los datos ===================================
 datos <- read.csv("./e-shop clothing 2008.csv", sep = ";")
+#=========================================================================================
+
 #========= Limpieza de los datos ===================================
 #Renombramos columnas
 colnames(datos) <- c(
@@ -71,6 +81,8 @@ datos <- datos %>%
     model_photography, location, country
   )
 
+#=========================================================================================
+
 #========= Exploracion de los datos ===================================
 
 #--------- Exploración inicial de los datos
@@ -106,27 +118,31 @@ ggplot(sesiones_por_pais, aes(x = reorder(country, sesiones), y = sesiones)) +
   theme_minimal()
 
 #--------- Porcentaje de sesiones únicas por país
-sesiones_por_pais <- datos %>%
-  group_by(country) %>%
-  summarise(sesiones = n_distinct(session_id)) %>%
-  mutate(porcentaje = sesiones / sum(sesiones) * 100)
 
-sesiones_agrupadas <- sesiones_por_pais %>%
-  mutate(country = ifelse(porcentaje < 3, "Otros", country)) %>%
+# Agrupar, calcular porcentaje y consolidar países con <3%
+waffle_vector <- datos %>%
   group_by(country) %>%
-  summarise(sesiones = sum(sesiones)) %>%
-  mutate(porcentaje = sesiones / sum(sesiones) * 100) %>%
-  arrange(desc(porcentaje))
+  summarise(sesiones = n_distinct(session_id), .groups = "drop") %>%
+  mutate(
+    country = case_when(
+      country == "Czech Republic" ~ "República Checa",
+      country == "Poland" ~ "Polonia",
+      (sesiones / sum(sesiones)) * 100 < 3 ~ "Otros",
+      TRUE ~ country  # Mantener el resto sin cambios
+    )
+  ) %>%
+  group_by(country) %>%
+  summarise(sesiones = sum(sesiones), .groups = "drop") %>%
+  mutate(porcentaje = round(sesiones / sum(sesiones) * 100)) %>%
+  arrange(desc(porcentaje)) %>%
+  select(country, porcentaje) %>%
+  deframe()
 
-# Gráfico
-ggplot(sesiones_agrupadas, aes(x = reorder(country, porcentaje), y = porcentaje)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  geom_text(aes(label = paste0(round(porcentaje, 1), "%")), hjust = -0.1, size = 3) +
-  coord_flip() +
-  labs(title = "Porcentaje de sesiones únicas por país",
-       x = "País",
-       y = "Porcentaje de sesiones (%)") +
-  theme_minimal()
+# Gráfico waffle
+waffle(waffle_vector,
+       rows = 10,
+       title = "Porcentaje de sesiones únicas por país",
+       colors = brewer.pal(n = length(waffle_vector), name = "Set2"))
 
 #--------- Clicks por página
 datos %>%
@@ -198,6 +214,54 @@ ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
        y = "Cantidad de clicks") +
   facet_wrap(~ page, ncol = 1) +
   theme_minimal()
+
+#----------
+posiciones_coord <- data.frame(
+  location = 1:6,
+  x = c(1, 2, 3, 1, 2, 3),  # coordenadas x para el gráfico
+  y = c(2, 2, 2, 1, 1, 1)   # coordenadas y para el gráfico
+)
+# Función que maneja diferentes formatos de location
+crear_heatmap_corregido <- function(pais_nombre, titulo_pais) {
+  # Mapeo de location a números
+  mapeo_location <- c(
+    "top left" = 1, "top middle" = 2, "top right" = 3,
+    "bottom left" = 4, "bottom middle" = 5, "bottom right" = 6
+  )
+  
+  # Preparar datos con mapeo correcto
+  resumen_pais <- datos %>%
+    filter(country == pais_nombre) %>%
+    mutate(location_num = mapeo_location[location]) %>%
+    filter(!is.na(location_num), location_num %in% 1:6) %>%
+    group_by(page, location_num) %>%
+    summarise(cantidad_clics = n(), .groups = "drop") %>%
+    inner_join(posiciones_coord, by = c("location_num" = "location"))
+  
+  # Verificar si hay datos
+  if(nrow(resumen_pais) == 0) {
+    cat("No hay datos válidos para", titulo_pais, "\n")
+    return(NULL)
+  }
+  
+  # Crear gráfico
+  ggplot(resumen_pais, aes(x = x, y = y, fill = cantidad_clics)) +
+    geom_tile(color = "black", linewidth = 0.5) +
+    geom_text(aes(label = cantidad_clics), color = "white", fontface = "bold") +
+    coord_fixed() +
+    scale_x_continuous(breaks = 1:3, labels = c("Izq", "Centro", "Der")) +
+    scale_y_continuous(breaks = 1:2, labels = c("Abajo", "Arriba")) +
+    scale_fill_viridis_c() +
+    theme_minimal() +
+    theme(legend.position = "right", panel.grid = element_blank()) +
+    facet_wrap(~ page) +
+    labs(title = paste(titulo_pais, "- Clicks por posición"),
+         fill = "Cantidad\nde clicks")
+}
+
+# Probar la función corregida
+crear_heatmap_corregido("Poland", "Polonia")
+crear_heatmap_corregido("Czech Republic", "República Checa")
 
 #--------- Distribución de sesiones
 # Clics por sesión
@@ -277,7 +341,7 @@ ggplot(proporciones, aes(x = clicks_grupo, y = proporcion, fill = main_category)
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 
-#=====================================
+#=========================================================================================
 
 #========= Clicks por sesión =====================
 session_counts <- datos %>%
@@ -435,7 +499,7 @@ reglas <- ruleInduction(itemsets_frec,
                         confidence = 0.2)
 reglas
 
-itemsets <- sort(reglas, by = "support", decreasing = TRUE)
+itemsets <- sort(reglas, by = "lift", decreasing = TRUE)
 inspect(itemsets[1:10])
 
 metricas <- interestMeasure(reglas, measure = c("coverage", "fishersExactTest", "lift"))
@@ -466,7 +530,7 @@ reglas <- ruleInduction(itemsets_frec,
                         confidence = 0.25)
 reglas
 
-itemsets <- sort(reglas, by = "support", decreasing = TRUE)
+itemsets <- sort(reglas, by = "lift", decreasing = TRUE)
 inspect(itemsets)
 
 metricas <- interestMeasure(reglas, measure = c("coverage", "fishersExactTest", "lift"))
@@ -502,37 +566,17 @@ seq1 <- sort(seq1, by = "support", decreasing = TRUE)
 
 seq1
 summary(seq1)
-inspect(seq1)
+inspect(seq1[1:5])
 
 
-#=========================================================================================
-
-#========= PRUEBAS =====================
-trans_location <- as(split(datos$location, datos$session_id), "transactions")
-
-# Reglas de asociación
-rules_location <- apriori(trans_location,
-                          parameter = list(supp = 0.05, conf = 0.80, minlen = 2))
-rules_location
-
-inspect(rules_location[1:10])
-inspect(sort(rules_location, by = "support", decreasing = TRUE))
-
-
-# Combinar productos y ubicaciones
-datos$product_location <- paste(datos$product_code, datos$location, sep = "_")
-
-transacciones <- as(split(datos$product_location, datos$session_id), "transactions")
-
-# Reglas: encontrar asociaciones entre productos y posiciones
-reglas <- apriori(transacciones, parameter = list(supp = 0.01, conf = 0.5, minlen = 2))
-reglas
-inspect(sort(reglas, by = "confidence", decreasing = TRUE))
+seq_tabla <- data.frame(
+  secuencia = labels(seq1),
+  soporte = quality(seq1)$support,
+  stringsAsFactors = FALSE
+)
+print(seq_tabla, row.names = FALSE)
 
 #=========================================================================================
-
-
-
 
 
 
