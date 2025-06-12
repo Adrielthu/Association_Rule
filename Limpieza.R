@@ -10,7 +10,7 @@ library(ggplot2)
 library(arules)
 library(arulesSequences)
 library(tidyr)
-library(scales)# para etiquetas de porcentaje
+library(scales) # para etiquetas de porcentaje
 library(waffle)
 library(tibble)
 library(RColorBrewer)
@@ -23,7 +23,7 @@ datos <- read.csv("./e-shop clothing 2008.csv", sep = ";")
 #=========================================================================================
 
 #========= Limpieza de los datos ===================================
-#Renombramos columnas
+# Renombramos columnas
 colnames(datos) <- c(
   "year", "month", "day", "order", "country", "session_id",
   "main_category", "product_code", "colour", "location",
@@ -100,51 +100,8 @@ names(datos)
 
 colSums(is.na(datos))
 
-sapply(datos, function(x) length(unique(x)))  # cantidad de valores únicos por columna
-
-#--------- Sesiones únicas por país
-sesiones_por_pais <- datos %>%
-  group_by(country) %>%
-  summarise(sesiones = n_distinct(session_id)) %>%
-  arrange(desc(sesiones))
-
-# Grafico de barras de sesiones por país
-ggplot(sesiones_por_pais, aes(x = reorder(country, sesiones), y = sesiones)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip() +
-  labs(title = "Cantidad de sesiones únicas por país",
-       x = "País",
-       y = "Cantidad de sesiones") +
-  theme_minimal()
-
-#--------- Porcentaje de sesiones únicas por país
-
-# Agrupar, calcular porcentaje y consolidar países con <3%
-waffle_vector <- datos %>%
-  group_by(country) %>%
-  summarise(sesiones = n_distinct(session_id), .groups = "drop") %>%
-  mutate(
-    country = case_when(
-      country == "Czech Republic" ~ "República Checa",
-      country == "Poland" ~ "Polonia",
-      (sesiones / sum(sesiones)) * 100 < 3 ~ "Otros",
-      TRUE ~ country  # Mantener el resto sin cambios
-    )
-  ) %>%
-  group_by(country) %>%
-  summarise(sesiones = sum(sesiones), .groups = "drop") %>%
-  mutate(porcentaje = round(sesiones / sum(sesiones) * 100)) %>%
-  arrange(desc(porcentaje)) %>%
-  select(country, porcentaje) %>%
-  deframe()
-
-waffle_vector <- waffle_vector[c("Polonia", "República Checa", "Otros")]
-
-# Gráfico waffle
-waffle(waffle_vector,
-       rows = 10,
-       title = "Porcentaje de sesiones únicas por país",
-       colors = brewer.pal(n = length(waffle_vector), name = "Set2"))
+# Muestra la cantidad de valores únicos por columna
+sapply(datos, function(x) length(unique(x)))
 
 #--------- Clicks por página
 datos %>%
@@ -154,15 +111,6 @@ datos %>%
   geom_bar(stat = "identity", fill = "steelblue") +
   labs(title = "Cantidad de clicks por página", x = "Página", y = "Clicks") +
   theme_minimal()
-
-#--------- Boxplot del precio por categoría principal
-ggplot(datos, aes(x = main_category, y = price)) +
-  geom_boxplot(fill = "lightblue") +
-  labs(title = "Boxplot del precio por categoría principal",
-       x = "Categoría principal",
-       y = "Precio (USD)") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #--------- Distribución de precios
 ggplot(datos, aes(x = price)) +
@@ -177,7 +125,6 @@ ggplot(datos, aes(x = price)) +
 
 
 #--------- Distribución de clicks según la posición de la imagen en las diferentes páginas: por país
-
 # Para Polonia
 resumen_pagina_polonia <- datos %>%
   filter(country == "Poland") %>%
@@ -218,12 +165,14 @@ ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
   theme_minimal()
 
 #----------
+
 posiciones_coord <- data.frame(
   location = 1:6,
   x = c(1, 2, 3, 1, 2, 3),  # coordenadas x para el gráfico
   y = c(2, 2, 2, 1, 1, 1)   # coordenadas y para el gráfico
 )
-# Función que maneja diferentes formatos de location
+
+# Función para generar el mapa de calor, según el país y título
 crear_heatmap_corregido <- function(pais_nombre, titulo_pais) {
   # Mapeo de location a números
   mapeo_location <- c(
@@ -240,13 +189,7 @@ crear_heatmap_corregido <- function(pais_nombre, titulo_pais) {
     summarise(cantidad_clics = n(), .groups = "drop") %>%
     inner_join(posiciones_coord, by = c("location_num" = "location"))
   
-  # Verificar si hay datos
-  if(nrow(resumen_pais) == 0) {
-    cat("No hay datos válidos para", titulo_pais, "\n")
-    return(NULL)
-  }
-  
-  # Crear gráfico
+  # Crea el gráfico
   ggplot(resumen_pais, aes(x = x, y = y, fill = cantidad_clics)) +
     geom_tile(color = "black", linewidth = 0.5) +
     geom_text(aes(label = cantidad_clics), color = "white", fontface = "bold") +
@@ -261,43 +204,14 @@ crear_heatmap_corregido <- function(pais_nombre, titulo_pais) {
          fill = "Cantidad\nde clicks")
 }
 
-# Probar la función corregida
+# Generación de los gráficos para Polonia y República Checa
 crear_heatmap_corregido("Poland", "Polonia")
 crear_heatmap_corregido("Czech Republic", "República Checa")
 
-#--------- Distribución de sesiones
-# Clics por sesión
-sesiones <- datos %>%
-  group_by(session_id) %>%
-  summarise(total_clicks = n()) %>%
-  ungroup()
-
-# Agrupar en rangos de clics
-sesiones <- sesiones %>%
-  mutate(clicks_grupo = cut(
-    total_clicks,
-    breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
-    labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
-    right = FALSE
-  ))
-
-# Calcular los conteos por grupo para agregar etiquetas
-conteo <- sesiones %>%
-  count(clicks_grupo)
-
-# Gráfico con etiquetas
-ggplot(conteo, aes(x = clicks_grupo, y = n)) +
-  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
-  geom_text(aes(label = n), vjust = -0.5) +  # Agrega etiquetas arriba de las barras
-  labs(title = "Distribución de sesiones por número de clicks",
-       x = "Rango de clicks por sesión",
-       y = "Cantidad de sesiones") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 #--------- Distribución de sesiones por numero de clicks
 
-#Categoria principal por sesion
+# Categoria principal por sesion
 cat_sesion <- datos %>%
   group_by(session_id, main_category) %>%
   summarise(n = n(), .groups = "drop") %>%
@@ -306,7 +220,7 @@ cat_sesion <- datos %>%
   ungroup() %>%
   select(session_id, main_category)
 
-#Unimos con los totales de clicks
+# Unimos con los totales de clicks
 sesiones_cat <- sesiones %>%
   left_join(cat_sesion, by = "session_id")
 
@@ -359,14 +273,62 @@ ggplot(session_counts, aes(x = reorder(session_id, -N), y = N)) +
   theme_minimal() +
   theme(axis.text.x = element_blank())  # Oculta los labels
 
+#--------- Distribución de sesiones - Otra forma de representar los clicks
+
+# Clicks por sesión
+sesiones <- datos %>%
+  group_by(session_id) %>%
+  summarise(total_clicks = n()) %>%
+  ungroup()
+
+# Agrupa en rangos de clics
+sesiones <- sesiones %>%
+  mutate(clicks_grupo = cut(
+    total_clicks,
+    breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
+    labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
+    right = FALSE
+  ))
+
+# Calcula los conteos por grupo para agregar etiquetas
+conteo <- sesiones %>%
+  count(clicks_grupo)
+
+# Gráfico
+ggplot(conteo, aes(x = clicks_grupo, y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black") +
+  geom_text(aes(label = n), vjust = -0.5) +
+  labs(title = "Distribución de sesiones por número de clicks",
+       x = "Rango de clicks por sesión",
+       y = "Cantidad de sesiones") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
 
 #========= Sesiones por país =====================
+
+#--------- Sesiones únicas por país
+sesiones_por_pais <- datos %>%
+  group_by(country) %>%
+  summarise(sesiones = n_distinct(session_id)) %>%
+  arrange(desc(sesiones))
+
+# Grafico
+ggplot(sesiones_por_pais, aes(x = reorder(country, sesiones), y = sesiones)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(title = "Cantidad de sesiones únicas por país",
+       x = "País",
+       y = "Cantidad de sesiones") +
+  theme_minimal()
+
+#--------- Sesiones únicas por país con filtro de Polonia y mínimo de 20 sesiones
 sesiones_por_pais <- datos %>%
   group_by(country) %>%
   summarise(sesiones = n_distinct(session_id)) %>%
   filter(country != "Poland" & sesiones > 20)
 
-# Gráfico con barras horizontales
+# Gráfico
 ggplot(sesiones_por_pais, aes(x = reorder(country, sesiones), y = sesiones)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   coord_flip() +
@@ -376,7 +338,37 @@ ggplot(sesiones_por_pais, aes(x = reorder(country, sesiones), y = sesiones)) +
   theme_minimal()
 
 
-#========= Productos vistos por Sesión =====================
+#--------- Porcentaje de sesiones únicas por país
+
+# Agrupar, calcular porcentaje y consolidar países con <3%
+waffle_vector <- datos %>%
+  group_by(country) %>%
+  summarise(sesiones = n_distinct(session_id), .groups = "drop") %>%
+  mutate(
+    country = case_when(
+      country == "Czech Republic" ~ "República Checa",
+      country == "Poland" ~ "Polonia",
+      (sesiones / sum(sesiones)) * 100 < 3 ~ "Otros",
+      TRUE ~ country  # Mantener el resto sin cambios
+    )
+  ) %>%
+  group_by(country) %>%
+  summarise(sesiones = sum(sesiones), .groups = "drop") %>%
+  mutate(porcentaje = round(sesiones / sum(sesiones) * 100)) %>%
+  arrange(desc(porcentaje)) %>%
+  select(country, porcentaje) %>%
+  deframe()
+
+waffle_vector <- waffle_vector[c("Polonia", "República Checa", "Otros")]
+
+# Gráfico waffle
+waffle(waffle_vector,
+       rows = 10,
+       title = "Porcentaje de sesiones únicas por país",
+       colors = brewer.pal(n = length(waffle_vector), name = "Set2"))
+
+
+#========= Productos vistos por Sesión (VER) =====================
 productos_por_sesion <- datos %>%
   group_by(session_id, product_code)%>%
   summarise(veces_visto = n(), .groups = "drop")
@@ -402,11 +394,11 @@ top_categorias <- datos %>%
   slice_head(n = 4) %>%
   rename(categoria = main_category)
 
-# grafico de barras mostrando las categorías más clickeadas, con limite en el eje x de 30 mil clicks en adelante
-
+# grafico de barras mostrando las categorías más clickeadas
+# con limite en el eje x de 35 mil clicks en adelante
 ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
   geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip(ylim = c(35000, max(top_categorias$N))) +  # Limita eje N en gráfico horizontal
+  coord_flip(ylim = c(35000, max(top_categorias$N))) +  # Limita en el eje Y
   labs(title = "Categorías más clickeadas",
        x = "Categoría",
        y = "Cantidad de clicks") +
@@ -430,12 +422,9 @@ ggplot(clics_por_mes, aes(x = nombre_mes, y = cantidad_clics)) +
     y = "Cantidad de clicks"
   ) +
   theme_minimal()
-
-
 #=========================================================================================
 
 #========= D) Convertir los productos por sesión a transacciones =====================
-
 transacciones <- as(split(datos$product_code, datos$session_id), "transactions")
 
 # Numero de transacciones
@@ -447,63 +436,52 @@ summary(transacciones)
 # Vemos las transacciones
 inspect(transacciones[1:10])
 
-# Vemos como se distribuyen las cantidades de items por transacción
-frecuentes <- itemFrequency(transacciones)
-frecuentes <- sort(frecuentes, decreasing = TRUE)
-top10 <- frecuentes[1:10]
-
-grises <- gray.colors(10, start = 0.3, end = 0.9)
-barplot(top10, 
-        col = grises,
-        main = "Top 10 productos más frecuentes",
-        ylab = "Frecuencia relativa",
-        las = 2,
-        cex.names = 0.7)
-
-# Vemos la cantidad de transacciones por producto
-boxplot(frecuentes, 
-        main = "Distribución de frecuencias de ítems",
-        ylab = "Frecuencia relativa",
-        col = "lightblue")
 #=========================================================================================
 
 #========= E) Conjunto de itemsets frecuentes: soporte = 2%, minlen = 2 =====================
 itemsets_frecuentes <- eclat(transacciones,
                              parameter = list(support = 0.02, minlen = 2), 
                              control = list(verbose=F))
+# Numero de items frecuentes
+itemsets_frecuentes
 
+# Itemsets frecuentes ordenados por soporte
 itemsets <- sort(itemsets_frecuentes, by= "support", decreasing = TRUE)
 
-inspect(head(itemsets, 6))
+inspect(itemsets[1:10])
 
 #=========================================================================================
 
 #========= F) reglas de asociación: Polonia, en la categoría “blusas” =====================
-
 polonia <- datos %>%
   filter(country == "Poland", main_category == "blouses")
 
 trans_polonia <- as(split(polonia$product_code, polonia$session_id), "transactions")
 
 
-# reglas con soporte mínimo de 2% y una confianza de 20%
-
+# Itemset frecuentes con soporte mínimo de 2% y una confianza de 20%
 itemsets_frec <- eclat(trans_polonia,
                              parameter = list(support = 0.02, minlen = 2), 
                              control = list(verbose=F))
-
+# Numero de items frecuentes
 itemsets_frec
-itemsets <- sort(itemsets_frec[1:5], by = "support", decreasing = TRUE)
-inspect(itemsets)
 
+itemsets <- sort(itemsets_frec, by = "support", decreasing = TRUE)
+
+inspect(itemsets[1:6])
+
+# Reglas con soporte mínimo de 2% y una confianza de 20%
 reglas <- ruleInduction(itemsets_frec, 
                         transactions = trans_polonia,
                         confidence = 0.2)
+
+# Numero de reglas frecuentes
 reglas
 
 itemsets <- sort(reglas, by = "lift", decreasing = TRUE)
 inspect(itemsets[1:10])
 
+# Cálculo de métricas
 metricas <- interestMeasure(reglas, measure = c("coverage", "fishersExactTest", "lift"))
 
 metricas
@@ -517,24 +495,27 @@ czech_republic <- datos %>%
 trans_czech_republic <- as(split(czech_republic$product_code, czech_republic$session_id), "transactions")
 
 
-# reglas con soporte mínimo de 4% y una confianza de 20%
-
+# Itemsets frecuentes con soporte mínimo de 4% y una confianza de 20%
 itemsets_frec <- eclat(trans_czech_republic,
                        parameter = list(support = 0.04, minlen = 2), 
                        control = list(verbose=F))
-
+# Numero de items frecuentes
 itemsets_frec
+
 itemsets <- sort(itemsets_frec, by = "support", decreasing = TRUE)
 inspect(itemsets)
 
+# Reglas con soporte mínimo de 4% y una confianza de 25%
 reglas <- ruleInduction(itemsets_frec, 
                         transactions = trans_czech_republic,
                         confidence = 0.25)
+# Numero de reglas frecuentes
 reglas
 
 itemsets <- sort(reglas, by = "lift", decreasing = TRUE)
 inspect(itemsets)
 
+# Cálculo de métricas
 metricas <- interestMeasure(reglas, measure = c("coverage", "fishersExactTest", "lift"))
 
 metricas
@@ -543,40 +524,43 @@ metricas
 
 #========= I) secuencias más frecuentes  =====================
 
-# Filtrar y seleccionar solo las columnas necesarias
-# Preparar datos para análisis secuencial
+# Filtro y selecciono solo las columnas necesarias
 secuencias <- datos %>%
   select(session_id, order, product_code) %>%
   rename(sequenceID = session_id, eventID = order, item = product_code) %>%
-  # Asegurar que cada fila representa un item en un evento específico
   arrange(sequenceID, eventID)
 
-# Guardar en CSV temporal para cargarlo como transacciones secuenciales
+# Guardo en CSV para despues cargarlo como transacciones
 write.table(secuencias, "secuencias_tmp.csv", sep = ",", row.names = FALSE, col.names = FALSE, quote = FALSE)
 
+# Cargo las secuencias como transacciones
 trans_seq <- read_baskets("secuencias_tmp.csv", sep = ",", info = c("sequenceID", "eventID"))
+
 
 inspect(trans_seq[1:5])
 
+# Genero las secuencias con un soporte mínimo del 2%
 seq1 <- cspade(trans_seq,
                parameter = list(support = 0.02),
                control = list(verbose=F))
 
+# Filtro las secuencias con más de un elemento
 seq1 <- subset(seq1, size(seq1) > 1)
 
+# Ordeno las secuencias por soporte
 seq1 <- sort(seq1, by = "support", decreasing = TRUE)
 
 seq1
 summary(seq1)
 inspect(seq1[1:5])
 
-
+# Lo guardo en una tabla para visualizar mejor
 seq_tabla <- data.frame(
   secuencia = labels(seq1),
-  soporte = quality(seq1)$support,
-  stringsAsFactors = FALSE
+  soporte = quality(seq1)$support
 )
-print(seq_tabla, row.names = FALSE)
+
+seq_tabla
 
 #=========================================================================================
 
