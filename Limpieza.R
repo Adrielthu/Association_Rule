@@ -138,6 +138,8 @@ waffle_vector <- datos %>%
   select(country, porcentaje) %>%
   deframe()
 
+waffle_vector <- waffle_vector[c("Polonia", "República Checa", "Otros")]
+
 # Gráfico waffle
 waffle(waffle_vector,
        rows = 10,
@@ -581,14 +583,37 @@ print(seq_tabla, row.names = FALSE)
 
 
 
+#========= Productos vistos por Sesión =====================
 
+library(dplyr)
+library(ggplot2)
+library(treemapify)
 
+# 1. Las 5 sesiones más activas
+top_sesiones <- datos %>%
+  group_by(session_id) %>%
+  summarise(total = n(), .groups = "drop") %>%
+  arrange(desc(total)) %>%
+  slice_head(n = 3) %>%
+  pull(session_id)
 
+# 2. Crear dataframe para el treemap
+df <- datos %>%
+  filter(session_id %in% top_sesiones) %>%
+  group_by(session_id, product_code) %>%
+  summarise(valor = n(), .groups = "drop") %>%
+  rename(subgrupo = session_id, grupo = product_code)
 
-
-
-
-
+# 3. Treemap sin leyend
+ggplot(df, aes(area = valor, fill = grupo, label = grupo, subgroup = subgrupo)) +
+  geom_treemap() +
+  geom_treemap_subgroup_border(colour = "white", size = 2) +
+  geom_treemap_subgroup_text(place = "centre", grow = TRUE,
+                             alpha = 0.3, colour = "black", fontface = "italic") +
+  geom_treemap_text(colour = "white", place = "centre",
+                    size = 12, grow = TRUE) +
+  theme(legend.position = "none") +
+  labs(title = "Productos comprados por las 5 sesiones más activas")
 
 
 
