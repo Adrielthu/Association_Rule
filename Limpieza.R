@@ -220,6 +220,21 @@ crear_heatmap_corregido("Czech Republic", "República Checa")
 
 #--------- Distribución de sesiones por numero de clicks
 
+# Clicks por sesión
+sesiones <- datos %>%
+  group_by(session_id) %>%
+  summarise(total_clicks = n()) %>%
+  ungroup()
+
+# Agrupa en rangos de clics
+sesiones <- sesiones %>%
+  mutate(clicks_grupo = cut(
+    total_clicks,
+    breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
+    labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
+    right = FALSE
+  ))
+
 # Categoria principal por sesion
 cat_sesion <- datos %>%
   group_by(session_id, main_category) %>%
@@ -283,21 +298,6 @@ ggplot(session_counts, aes(x = reorder(session_id, -N), y = N)) +
   theme(axis.text.x = element_blank())  # Oculta los labels
 
 #--------- Distribución de sesiones - Otra forma de representar los clicks
-
-# Clicks por sesión
-sesiones <- datos %>%
-  group_by(session_id) %>%
-  summarise(total_clicks = n()) %>%
-  ungroup()
-
-# Agrupa en rangos de clics
-sesiones <- sesiones %>%
-  mutate(clicks_grupo = cut(
-    total_clicks,
-    breaks = c(0, 2, 5, 10, 20, 50, 100, Inf),
-    labels = c("1–2", "3–5", "6–10", "11–20", "21–50", "51–100", "100+"),
-    right = FALSE
-  ))
 
 # Calcula los conteos por grupo para agregar etiquetas
 conteo <- sesiones %>%
