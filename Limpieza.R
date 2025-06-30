@@ -57,7 +57,12 @@ paises <- c(
 datos$country <- dplyr::recode(as.character(datos$country), !!!paises)
 
 # MAIN CATEGORY
-categorias <- c("1" = "trousers", "2" = "skirts", "3" = "blouses", "4" = "sale")
+categorias <- c(
+  "1" = "pantalones",
+  "2" = "faldas",
+  "3" = "blusas",
+  "4" = "ofertas"
+)
 datos$main_category <- dplyr::recode(as.character(datos$main_category), !!!categorias)
 
 # COLOUR
@@ -174,6 +179,7 @@ ggplot(resumen_pagina_polonia, aes(x = reorder(location, cantidad_clics),
   theme_minimal()
 
 #---------- Mapa de calor de clicks por posición de imagen y página
+library(viridis)
 
 posiciones_coord <- data.frame(
   location = 1:6,
@@ -217,6 +223,61 @@ crear_heatmap_corregido <- function(pais_nombre, titulo_pais) {
 crear_heatmap_corregido("Poland", "Polonia")
 crear_heatmap_corregido("Czech Republic", "República Checa")
 
+
+#--------- elegante
+crear_heatmap_clicks <- function(pais_nombre, titulo_pais) {
+  mapeo_location <- c(
+    "top left" = 1, "top middle" = 2, "top right" = 3,
+    "bottom left" = 4, "bottom middle" = 5, "bottom right" = 6
+  )
+  
+  resumen_pais <- datos %>%
+    filter(country == pais_nombre) %>%
+    mutate(location_num = mapeo_location[location]) %>%
+    filter(!is.na(location_num), location_num %in% 1:6) %>%
+    group_by(page, location_num) %>%
+    summarise(
+      cantidad_clics = n(),                           
+      precio_promedio = mean(price, na.rm = TRUE),    
+      .groups = "drop"
+    ) %>%
+    inner_join(posiciones_coord, by = c("location_num" = "location"))
+  
+  etiquetas_pagina <- function(paginas) paste("Página", paginas)
+  
+  ggplot(resumen_pais, aes(x = x, y = y, fill = cantidad_clics)) +
+    geom_tile(color = "white", linewidth = 0.8) +
+    geom_text(aes(label = paste0("$", round(precio_promedio, 2))),
+              color = "white", size = 4.5, fontface = "bold") +
+    coord_fixed() +
+    scale_fill_viridis_c(option = "C", begin = 0.2, end = 0.9, direction = -1) +
+    facet_wrap(~ page, ncol = 3, labeller = labeller(page = etiquetas_pagina)) +
+    labs(
+      title = paste(titulo_pais, "- Clicks por posición con precio promedio"),
+      fill = "Cantidad\nde clicks"
+    ) +
+    theme_minimal(base_size = 13) +
+    theme(
+      plot.title = element_text(
+        face = "bold", 
+        size = 20,              # Más grande (era 16)
+        hjust = 0.5,            # Centrado
+        margin = margin(b = 20) # Separación abajo del título
+      ),
+      strip.text = element_text(face = "bold", size = 13),
+      legend.title = element_text(face = "bold"),
+      legend.key.height = unit(0.6, "cm"),
+      panel.grid = element_blank(),
+      axis.title = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank()
+    )
+}
+crear_heatmap_clicks("Poland", "Polonia")
+crear_heatmap_clicks("Czech Republic", "República Checa")
+
+ggsave("heatmap_polonia.png", crear_heatmap_clicks("Poland", "Polonia"), dpi = 300, bg = "transparent", width = 10, height = 5)
+ggsave("heatmap_rp.png", crear_heatmap_clicks("Czech Republic", "República Checa"), dpi = 300, bg = "transparent", width = 10, height = 5)
 
 #--------- Distribución de sesiones por numero de clicks
 
@@ -304,16 +365,28 @@ conteo <- sesiones %>%
   count(clicks_grupo)
 
 # Gráfico
-ggplot(conteo, aes(x = clicks_grupo, y = n)) +
+grafico <- ggplot(conteo, aes(x = clicks_grupo, y = n)) +
   geom_bar(stat = "identity", fill = "steelblue", color = "black") +
-  geom_text(aes(label = n), vjust = -0.5) +
-  labs(title = "Distribución de sesiones por número de clicks",
-       x = "Rango de clicks por sesión",
-       y = "Cantidad de sesiones") +
+  geom_text(aes(label = n), size = 5, vjust = -0.5) +
+  labs(
+    title = NULL,
+    x = "Rango de clicks por sesión",
+    y = NULL
+  ) +
   theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(
+    axis.text.x = element_text(size = 15),       # Aumenta tamaño eje X
+    axis.text.y = element_blank(),               # Oculta valores del eje Y
+    axis.title.x = element_text(size = 17, face = "bold"),
+    axis.title.y = element_blank(),              # Elimina título eje Y
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA)
+  )
 
-
+# Guardar como PNG con fondo transparente
+ggsave("distribucion_sesiones_clicks.png", plot = grafico, bg = "transparent", width = 8, height = 5)
 #========= Sesiones por país =====================
 
 #--------- Sesiones únicas por país
@@ -405,14 +478,30 @@ top_categorias <- datos %>%
 
 # grafico de barras mostrando las categorías más clickeadas
 # con limite en el eje x de 35 mil clicks en adelante
-ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
-  geom_bar(stat = "identity", fill = "steelblue") +
-  coord_flip(ylim = c(35000, max(top_categorias$N))) +  # Limita en el eje Y
-  labs(title = "Categorías más clickeadas",
-       x = "Categoría",
-       y = "Cantidad de clicks") +
-  theme_minimal()
+grafico <- ggplot(top_categorias, aes(x = reorder(categoria, N), y = N)) +
+  geom_bar(stat = "identity", fill = "steelblue", color = "black") +  # Borde negro
+  geom_text(aes(label = N), hjust = -0.1, size = 5, color = "black") +
+  coord_flip(ylim = c(35000, max(top_categorias$N) * 1.1)) +
+  labs(
+    title = "Categorías más clickeadas",
+    x = "Categoría",
+    y = "Cantidad de clicks"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_blank(),  # Oculta valores del eje X
+    axis.text.y = element_text(size = 16),
+    axis.title.x = element_text(size = 17, face = "bold"),
+    axis.title.y = element_text(size = 17, face = "bold"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor.y = element_blank(),
+    panel.background = element_rect(fill = "transparent", color = NA),
+    plot.background = element_rect(fill = "transparent", color = NA)
+  )
 
+grafico
+# Guardar como PNG con fondo transparente
+ggsave("categorias_click.png", plot = grafico, bg = "transparent", width = 8, height = 5)
 #=========================================================================================
 
 #========= C) clicks de navegación a lo largo de los meses =====================
